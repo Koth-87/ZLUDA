@@ -31,6 +31,17 @@ memchr = "2.5.0"
 memoffset = "0.8"
 static_assertions = "1.1.0"
 
+[dependencies.windows]
+version = "0.54.0"
+features = [
+    "Win32_System_Com",
+    "Win32_Graphics_Direct3D11",
+]
+
+[dependencies.cl3]
+version = "0.9.5"
+features = ["CL_VERSION_1_1", "CL_VERSION_1_2", "CL_VERSION_2_0"]
+
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["heapapi", "std"] }
 

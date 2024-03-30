@@ -17,6 +17,7 @@ use self::cache::KernelCache;
 pub(crate) mod array;
 pub(crate) mod cache;
 pub(crate) mod context;
+pub(crate) mod d3d11;
 pub(crate) mod dark_api;
 pub(crate) mod device;
 pub(crate) mod function;
@@ -148,7 +149,7 @@ impl<T: ZludaObject> LiveCheck<T> {
         outer_ptr as *mut Self
     }
 
-    pub unsafe fn as_ref_unchecked(&self) -> & T {
+    pub unsafe fn as_ref_unchecked(&self) -> &T {
         &self.data
     }
 

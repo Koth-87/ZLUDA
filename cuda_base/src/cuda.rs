@@ -7074,3 +7074,18 @@ extern "C" {
 extern "C" {
     pub fn cuProfilerStop() -> CUresult;
 }
+
+extern "C" {
+    pub fn cuD3D11GetDevice(
+        pCudaDevice: *mut CUdevice,
+        pAdapter: *mut *mut ::std::os::raw::c_void,
+    ) -> CUresult;
+}
+
+extern "C" {
+    pub fn cuGraphicsD3D11RegisterResource(
+        pCudaDevice: *mut CUgraphicsResource,
+        pD3DResource: *const ::std::os::raw::c_void,
+        Flags: ::std::os::raw::c_uint,
+    ) -> CUresult;
+}

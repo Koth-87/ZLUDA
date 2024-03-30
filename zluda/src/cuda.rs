@@ -214,6 +214,8 @@ cuda_function_declarations!(
         cuLinkComplete,
         cuLinkDestroy,
         cuLinkCreate_v2,
+        cuD3D11GetDevice,
+        cuGraphicsD3D11RegisterResource
     ]
 );
 
@@ -227,6 +229,7 @@ mod definitions {
     use crate::r#impl;
     use crate::r#impl::array;
     use crate::r#impl::context;
+    use crate::r#impl::d3d11;
     use crate::r#impl::dark_api;
     use crate::r#impl::device;
     use crate::r#impl::function;
@@ -1242,9 +1245,7 @@ mod definitions {
         surface::create(pSurfObject, pResDesc)
     }
 
-    pub(crate) unsafe fn cuSurfObjectDestroy(
-        surfObject: hipSurfaceObject_t,
-    ) -> hipError_t {
+    pub(crate) unsafe fn cuSurfObjectDestroy(surfObject: hipSurfaceObject_t) -> hipError_t {
         hipDestroySurfaceObject(surfObject)
     }
 
@@ -1651,5 +1652,20 @@ mod definitions {
         stateOut: *mut *mut link::LinkState,
     ) -> Result<(), CUresult> {
         link::create(numOptions, options, optionValues, stateOut)
+    }
+
+    pub(crate) unsafe fn cuD3D11GetDevice(
+        pCudaDevice: *mut hipDevice_t,
+        pAdapter: *mut *mut ::std::os::raw::c_void,
+    ) -> Result<(), CUresult> {
+        d3d11::get_device(pCudaDevice, pAdapter)
+    }
+
+    pub(crate) unsafe fn cuGraphicsD3D11RegisterResource(
+        pCudaDevice: *mut hipGraphicsResource_t,
+        pD3DResource: *const ::std::os::raw::c_void,
+        Flags: ::std::os::raw::c_uint,
+    ) -> Result<(), CUresult> {
+        d3d11::register_resource(pCudaDevice, pD3DResource, Flags)
     }
 }
