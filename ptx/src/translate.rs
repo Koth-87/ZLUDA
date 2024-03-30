@@ -2653,6 +2653,7 @@ fn replace_instructions_with_builtins_impl<'input>(
             Statement::Instruction(ast::Instruction::Vote(
                 ast::VoteDetails {
                     mode: ast::VoteMode::Any,
+                    sync,
                     negate_pred,
                 },
                 arg,
@@ -2672,6 +2673,7 @@ fn replace_instructions_with_builtins_impl<'input>(
                     ast::Instruction::Vote(
                         ast::VoteDetails {
                             mode: ast::VoteMode::Any,
+                            sync,
                             negate_pred,
                         },
                         arg,
@@ -2682,6 +2684,7 @@ fn replace_instructions_with_builtins_impl<'input>(
             Statement::Instruction(ast::Instruction::Vote(
                 ast::VoteDetails {
                     mode: ast::VoteMode::All,
+                    sync,
                     negate_pred,
                 },
                 arg,
@@ -2701,6 +2704,7 @@ fn replace_instructions_with_builtins_impl<'input>(
                     ast::Instruction::Vote(
                         ast::VoteDetails {
                             mode: ast::VoteMode::All,
+                            sync,
                             negate_pred,
                         },
                         arg,
@@ -2711,6 +2715,7 @@ fn replace_instructions_with_builtins_impl<'input>(
             Statement::Instruction(ast::Instruction::Vote(
                 ast::VoteDetails {
                     mode: ast::VoteMode::Ballot,
+                    sync,
                     negate_pred,
                 },
                 arg,
@@ -2730,6 +2735,7 @@ fn replace_instructions_with_builtins_impl<'input>(
                     ast::Instruction::Vote(
                         ast::VoteDetails {
                             mode: ast::VoteMode::Ballot,
+                            sync,
                             negate_pred,
                         },
                         arg,
@@ -6594,6 +6600,10 @@ impl<T: ArgParamsEx> ast::Instruction<T> {
                     ast::StateSpace::Reg,
                 )),
             )?),
+            ast::Instruction::Mul24(details, args) => ast::Instruction::Mul24(
+                details,
+                args.map_generic(visitor, &ast::Type::Scalar(details.type_), false)?,
+            ),
         })
     }
 }
@@ -6915,6 +6925,7 @@ impl<T: ast::ArgParams> ast::Instruction<T> {
             ast::Instruction::Vshr { .. } => None,
             ast::Instruction::Dp4a { .. } => None,
             ast::Instruction::MatchAny { .. } => None,
+            ast::Instruction::Mul24 { .. } => None,
             ast::Instruction::Sub(ast::ArithDetails::Signed(_), _) => None,
             ast::Instruction::Sub(ast::ArithDetails::Unsigned(_), _) => None,
             ast::Instruction::Add(ast::ArithDetails::Signed(_), _) => None,

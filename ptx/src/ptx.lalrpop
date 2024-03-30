@@ -213,6 +213,7 @@ match {
     "min",
     "mov",
     "mul",
+    "mul24",
     "nanosleep",
     "neg",
     "not",
@@ -294,6 +295,7 @@ ExtendedID : &'input str = {
     "min",
     "mov",
     "mul",
+    "mul24",
     "nanosleep",
     "neg",
     "not",
@@ -839,6 +841,7 @@ Instruction: ast::Instruction<ast::ParsedArgParams<'input>> = {
     InstMatch,
     InstRed,
     InstNanosleep,
+    InstMul24,
 };
 
 // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-ld
@@ -2099,17 +2102,17 @@ InstTex: ast::Instruction<ast::ParsedArgParams<'input>> = {
 
 // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#surface-instructions-suld
 InstSuld: ast::Instruction<ast::ParsedArgParams<'input>> = {
-    "suld" ".b" <geometry: UnlayeredTextureGeometry> <vector:VectorPrefix?> <type_:AnyBitType> ".trap" <dst:DstOperandVec> "," "[" <image:Operand> "," <coordinates:SrcOperandVec> "]"  => {
+    "suld" ".b" <geometry: UnlayeredTextureGeometry> <vector:VectorPrefix?> <type_:AnyBitType> <clamp:SurfaceClamp> <dst:DstOperandVec> "," "[" <image:Operand> "," <coordinates:SrcOperandVec> "]"  => {
         let args = ast::Arg4Tex {
             dst, 
             image,
             coordinates,
             layer: None,
         };
-        let details = ast::SurfaceDetails { geometry, vector, type_, direct: false, };
+        let details = ast::SurfaceDetails { geometry, vector, type_, clamp, direct: false, };
         ast::Instruction::Suld(details, args)
     },
-    "suld" ".b" ".a1d" <vector:VectorPrefix?> <type_:AnyBitType> ".trap" <dst:DstOperandVec> "," "[" <image:Operand> "," "{" <layer:SrcOperand> "," <x:RegOrImmediate> "}" "]"  => {
+    "suld" ".b" ".a1d" <vector:VectorPrefix?> <type_:AnyBitType> <clamp:SurfaceClamp> <dst:DstOperandVec> "," "[" <image:Operand> "," "{" <layer:SrcOperand> "," <x:RegOrImmediate> "}" "]"  => {
         let geometry = ast::TextureGeometry::Array1D;
         let args = ast::Arg4Tex {
             dst,
@@ -2117,10 +2120,10 @@ InstSuld: ast::Instruction<ast::ParsedArgParams<'input>> = {
             coordinates: ast::Operand::VecPack(vec![x]),
             layer: Some(layer),
         };
-        let details = ast::SurfaceDetails { geometry, vector, type_, direct: false, };
+        let details = ast::SurfaceDetails { geometry, vector, type_, clamp, direct: false, };
         ast::Instruction::Suld(details, args)
     },
-    "suld" ".b" ".a2d" <vector:VectorPrefix?> <type_:AnyBitType> ".trap" <dst:DstOperandVec> "," "[" <image:Operand> "," "{" <layer:SrcOperand> "," <x:RegOrImmediate> "," <y:RegOrImmediate> "," RegOrImmediate "}" "]"  => {
+    "suld" ".b" ".a2d" <vector:VectorPrefix?> <type_:AnyBitType> <clamp:SurfaceClamp> <dst:DstOperandVec> "," "[" <image:Operand> "," "{" <layer:SrcOperand> "," <x:RegOrImmediate> "," <y:RegOrImmediate> "," RegOrImmediate "}" "]"  => {
         let geometry = ast::TextureGeometry::Array2D;
         let args = ast::Arg4Tex {
             dst,
@@ -2128,24 +2131,30 @@ InstSuld: ast::Instruction<ast::ParsedArgParams<'input>> = {
             coordinates: ast::Operand::VecPack(vec![x, y]),
             layer: Some(layer),
         };
-        let details = ast::SurfaceDetails { geometry, vector, type_, direct: false, };
+        let details = ast::SurfaceDetails { geometry, vector, type_, clamp, direct: false, };
         ast::Instruction::Suld(details, args)
     }
 }
 
+SurfaceClamp: ast::SurfaceClamp = {
+    ".trap" => ast::SurfaceClamp::Trap,
+    ".clamp" => ast::SurfaceClamp::Clamp,
+    ".zero" => ast::SurfaceClamp::Zero,
+}
+
 // https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#surface-instructions-sust
 InstSust: ast::Instruction<ast::ParsedArgParams<'input>> = {
-    "sust" ".b" <geometry: UnlayeredTextureGeometry> <vector:VectorPrefix?> <type_:AnyBitType> SustClamp "[" <image:Operand> "," <coordinates:SrcOperandVec> "]" "," <value:SrcOperandVec> => {
+    "sust" ".b" <geometry: UnlayeredTextureGeometry> <vector:VectorPrefix?> <type_:AnyBitType> <clamp:SurfaceClamp> "[" <image:Operand> "," <coordinates:SrcOperandVec> "]" "," <value:SrcOperandVec> => {
         let args = ast::Arg4Sust {
             image,
             coordinates,
             layer: None,
             value,
         };
-        let details = ast::SurfaceDetails { geometry, vector, type_, direct: false, };
+        let details = ast::SurfaceDetails { geometry, vector, type_, clamp, direct: false, };
         ast::Instruction::Sust(details, args)
     },
-    "sust" ".b" ".a1d" <vector:VectorPrefix?> <type_:AnyBitType> SustClamp "[" <image:Operand> "," "{" <layer:SrcOperand> "," <x:RegOrImmediate> "}" "]" "," <value:SrcOperandVec> => {
+    "sust" ".b" ".a1d" <vector:VectorPrefix?> <type_:AnyBitType> <clamp:SurfaceClamp> "[" <image:Operand> "," "{" <layer:SrcOperand> "," <x:RegOrImmediate> "}" "]" "," <value:SrcOperandVec> => {
         let geometry = ast::TextureGeometry::Array1D;
         let args = ast::Arg4Sust {
             image,
@@ -2153,10 +2162,10 @@ InstSust: ast::Instruction<ast::ParsedArgParams<'input>> = {
             layer: Some(layer),
             value,
         };
-        let details = ast::SurfaceDetails { geometry, vector, type_, direct: false, };
+        let details = ast::SurfaceDetails { geometry, vector, type_, clamp, direct: false, };
         ast::Instruction::Sust(details, args)
     },
-    "sust" ".b" ".a2d" <vector:VectorPrefix?> <type_:AnyBitType> SustClamp "[" <image:Operand> "," "{" <layer:SrcOperand> "," <x:RegOrImmediate> "," <y:RegOrImmediate> "," RegOrImmediate "}" "]" "," <value:SrcOperandVec> => {
+    "sust" ".b" ".a2d" <vector:VectorPrefix?> <type_:AnyBitType> <clamp:SurfaceClamp> "[" <image:Operand> "," "{" <layer:SrcOperand> "," <x:RegOrImmediate> "," <y:RegOrImmediate> "," RegOrImmediate "}" "]" "," <value:SrcOperandVec> => {
         let geometry = ast::TextureGeometry::Array2D;
         let args = ast::Arg4Sust {
             image,
@@ -2164,15 +2173,9 @@ InstSust: ast::Instruction<ast::ParsedArgParams<'input>> = {
             layer: Some(layer),
             value,
         };
-        let details = ast::SurfaceDetails { geometry, vector, type_, direct: false, };
+        let details = ast::SurfaceDetails { geometry, vector, type_, clamp, direct: false, };
         ast::Instruction::Sust(details, args)
     }
-}
-
-SustClamp = {
-    ".trap",
-    ".clamp",
-    ".zero"
 }
 
 UnlayeredTextureGeometry: ast::TextureGeometry = {
@@ -2244,27 +2247,31 @@ ShiftNormalization: ast::ShiftNormalization = {
 InstVote: ast::Instruction<ast::ParsedArgParams<'input>> = {
     "vote" ".ballot" ".sync" ".b32" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
         let mode = ast::VoteMode::Ballot;
+        let sync = true;
         let negate_pred = negate.is_some();
         let args = ast::Arg3 {dst, src1, src2};
-        ast::Instruction::Vote(ast::VoteDetails{mode, negate_pred}, args)
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync, negate_pred}, args)
     },
-    "vote" ".sync" ".ballot" ".b32" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
+    "vote" <sync:".sync"?> ".ballot" ".b32" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
         let mode = ast::VoteMode::Ballot;
+        let sync = sync.is_some();
         let negate_pred = negate.is_some();
         let args = ast::Arg3 {dst, src1, src2};
-        ast::Instruction::Vote(ast::VoteDetails{mode, negate_pred}, args)
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync, negate_pred}, args)
     },
-    "vote" ".sync" ".any" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
+    "vote" <sync:".sync"?> ".any" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
         let mode = ast::VoteMode::Any;
+        let sync = sync.is_some();
         let negate_pred = negate.is_some();
         let args = ast::Arg3 {dst, src1, src2};
-        ast::Instruction::Vote(ast::VoteDetails{mode, negate_pred}, args)
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync, negate_pred}, args)
     },
-    "vote" ".sync" ".all" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
+    "vote" <sync:".sync"?> ".all" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
         let mode = ast::VoteMode::All;
+        let sync = sync.is_some();
         let negate_pred = negate.is_some();
         let args = ast::Arg3 {dst, src1, src2};
-        ast::Instruction::Vote(ast::VoteDetails{mode, negate_pred}, args)   
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync, negate_pred}, args)   
     }
 }
 
@@ -2370,6 +2377,29 @@ InstNanosleep: ast::Instruction<ast::ParsedArgParams<'input>> = {
     "nanosleep" ".u32" <a:Arg1> => {
         ast::Instruction::Nanosleep(a)
     }
+}
+
+// https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-mul24
+InstMul24: ast::Instruction<ast::ParsedArgParams<'input>> = {
+    "mul24" <control:Mul24Control> ".u32" <a:Arg3> => {
+        let details = ast::Mul24Details {
+            type_: ast::ScalarType::U32,
+            control
+        };
+        ast::Instruction::Mul24(details, a)
+    },
+    "mul24" <control:Mul24Control> ".s32" <a:Arg3> => {
+        let details = ast::Mul24Details {
+            type_: ast::ScalarType::S32,
+            control
+        };
+        ast::Instruction::Mul24(details, a)
+    }
+}
+
+Mul24Control: ast::Mul24Control = {
+    ".lo" => ast::Mul24Control::Low,
+    ".hi" => ast::Mul24Control::High,
 }
 
 NegTypeFtz: ast::ScalarType = {

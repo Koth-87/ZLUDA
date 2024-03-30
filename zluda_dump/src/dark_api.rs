@@ -432,13 +432,42 @@ impl CudaDarkApiDump for CudaDarkApiDumpFns {
     }
 
     unsafe fn ctx_create_v2_bypass_impl(
-        _guid: &[u8; 16],
-        _idx: usize,
-        _pctx: *mut cuda_types::CUcontext,
-        _flags: c_uint,
-        _dev: cuda_types::CUdevice,
+        guid: &[u8; 16],
+        idx: usize,
+        pctx: *mut cuda_types::CUcontext,
+        flags: c_uint,
+        dev: cuda_types::CUdevice,
     ) -> CUresult {
-        todo!()
+        let arguments_writer = Box::new(move |writer: &mut dyn std::io::Write| {
+            writer.write_all(b"(pctx: ")?;
+            format::CudaDisplay::write(&pctx, "", 0, writer)?;
+            writer.write_all(b", flags: ")?;
+            format::CudaDisplay::write(&flags, "", 0, writer)?;
+            writer.write_all(b", dev: ")?;
+            format::CudaDisplay::write(&dev, "", 0, writer)?;
+            writer.write_all(b")")
+        });
+        let global_state = &mut *super::GLOBAL_STATE.lock().unwrap();
+        let mut fn_logger = global_state.log_factory.get_logger_dark_api(
+            CUuuid {
+                bytes: guid.clone(),
+            },
+            idx,
+            Some(arguments_writer),
+        );
+        let cuda_state = &mut global_state.delayed_state.unwrap_mut().cuda_state;
+        let original_ptr = cuda_state.dark_api.overrides[guid].1.add(idx);
+        let original_fn = mem::transmute::<
+            _,
+            unsafe extern "system" fn(
+                *mut cuda_types::CUcontext,
+                c_uint,
+                cuda_types::CUdevice,
+            ) -> CUresult,
+        >(*original_ptr);
+        let original_result = original_fn(pctx, flags, dev);
+        fn_logger.result = Some(original_result);
+        original_result
     }
 
     unsafe fn dlss_feature_evaluate_init_impl(

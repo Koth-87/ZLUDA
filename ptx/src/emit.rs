@@ -1137,6 +1137,7 @@ fn emit_instruction(
         ast::Instruction::Vshr(arg) => emit_inst_vshr(ctx, arg)?,
         ast::Instruction::Set(details, arg) => emit_inst_set(ctx, details, arg)?,
         ast::Instruction::Red(details, arg) => emit_inst_red(ctx, details, arg)?,
+        ast::Instruction::Mul24(details, arg) => emit_inst_mul24(ctx, details, arg)?,
         // replaced by function calls or Statement variants
         ast::Instruction::Activemask { .. }
         | ast::Instruction::Bar(..)
@@ -1159,6 +1160,46 @@ fn emit_instruction(
         | ast::Instruction::Nanosleep(..)
         | ast::Instruction::MatchAny(..) => return Err(TranslateError::unreachable()),
     })
+}
+
+fn emit_inst_mul24(
+    ctx: &mut EmitContext,
+    details: &ast::Mul24Details,
+    arg: &ast::Arg3<ExpandedArgParams>,
+) -> Result<(), TranslateError> {
+    unsafe fn clear_top8_bits(
+        ctx: &mut EmitContext<'_>,
+        src: Id,
+        right_shift: unsafe extern "C" fn(
+            LLVMBuilderRef,
+            LLVMValueRef,
+            LLVMValueRef,
+            *const i8,
+        ) -> LLVMValueRef,
+    ) -> Result<LLVMValueRef, TranslateError> {
+        let u32_llvm_type = get_llvm_type(ctx, &ast::Type::Scalar(ast::ScalarType::U32))?;
+        let const_8 = LLVMConstInt(u32_llvm_type, 8, 0);
+        let src = ctx.names.value(src)?;
+        let src = LLVMBuildShl(ctx.builder.get(), src, const_8, LLVM_UNNAMED);
+        let src = right_shift(ctx.builder.get(), src, const_8, LLVM_UNNAMED);
+        Ok(src)
+    }
+    let right_shift = match details.type_ {
+        ast::ScalarType::U32 => LLVMBuildLShr,
+        ast::ScalarType::S32 => LLVMBuildAShr,
+        _ => return Err(TranslateError::unreachable()),
+    };
+    let src1 = unsafe { clear_top8_bits(ctx, arg.src1, right_shift)? };
+    let src2 = unsafe { clear_top8_bits(ctx, arg.src2, right_shift)? };
+    match details.control {
+        ast::Mul24Control::Low => {
+            emit_inst_mul_low_impl(ctx, Some(arg.dst), src1, src2, LLVMBuildMul)?
+        }
+        ast::Mul24Control::High => {
+            emit_inst_mul_hi_impl(ctx, details.type_, Some(arg.dst), src1, src2)?
+        }
+    };
+    Ok(())
 }
 
 fn emit_inst_red(
@@ -2751,13 +2792,13 @@ fn emit_inst_mul_hi(
 
 fn emit_inst_mul_hi_impl(
     ctx: &mut EmitContext,
-    type_: ast::ScalarType,
+    narrow_type: ast::ScalarType,
     dst: Option<Id>,
     src1: impl GetLLVMValue,
     src2: impl GetLLVMValue,
 ) -> Result<LLVMValueRef, TranslateError> {
-    let temp_dst = emit_inst_mul_wide(ctx, type_, None, src1, src2)?;
-    emit_get_high_bits(ctx, type_, temp_dst, dst)
+    let temp_dst = emit_inst_mul_wide(ctx, narrow_type, None, src1, src2)?;
+    emit_get_high_bits(ctx, narrow_type, temp_dst, dst)
 }
 
 fn emit_get_high_bits(

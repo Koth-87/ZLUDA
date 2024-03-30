@@ -475,6 +475,7 @@ pub enum Instruction<P: ArgParams> {
     MatchAny(Arg3<P>),
     Red(AtomDetails, Arg2St<P>),
     Nanosleep(Arg1<P>),
+    Mul24(Mul24Details, Arg3<P>),
 }
 
 #[derive(Copy, Clone)]
@@ -495,6 +496,7 @@ pub enum ShflMode {
 #[derive(Copy, Clone)]
 pub struct VoteDetails {
     pub mode: VoteMode,
+    pub sync: bool,
     pub negate_pred: bool,
 }
 
@@ -831,6 +833,18 @@ pub enum MulIntControl {
     Low,
     High,
     Wide,
+}
+
+#[derive(Copy, Clone)]
+pub struct Mul24Details {
+    pub type_: ScalarType,
+    pub control: Mul24Control,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum Mul24Control {
+    Low,
+    High,
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
@@ -1364,8 +1378,16 @@ pub struct SurfaceDetails {
     pub geometry: TextureGeometry,
     pub vector: Option<u8>,
     pub type_: ScalarType,
+    pub clamp: SurfaceClamp,
     // direct = takes .texref, indirect = takes .u64
     pub direct: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceClamp {
+    Trap,
+    Clamp,
+    Zero
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
