@@ -188,16 +188,16 @@ impl CudaDarkApi for CudaDarkApiZluda {
     }
 
     unsafe extern "system" fn heap_alloc(
-        _halloc_ptr: *mut *mut zluda_dark_api::HeapAllocRecord,
-        _param1: usize,
-        _param2: usize,
+        alloc_ptr: *mut *mut zluda_dark_api::HeapAllocRecord,
+        destructor: Option<unsafe extern "system" fn(u32, usize)>,
+        value: usize,
     ) -> CUresult {
         super::unimplemented()
     }
 
     unsafe extern "system" fn heap_free(
-        _halloc: *mut zluda_dark_api::HeapAllocRecord,
-        _param2: *mut usize,
+        alloc_ptr: *mut zluda_dark_api::HeapAllocRecord,
+        value: *mut usize,
     ) -> CUresult {
         super::unimplemented()
     }

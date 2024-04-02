@@ -286,11 +286,13 @@ dark_api_table!(
     => HEAP_ACCESS [3] {
         0 => SIZE_OF,
         1 => heap_alloc(
-            halloc_ptr: *mut *mut HeapAllocRecord,
-            param1: usize,
-            param2: usize
+            alloc_ptr: *mut *mut HeapAllocRecord,
+            // destructor is called only on CUDA exit, on Windows
+            // that is DLL unload from DllMain
+            destructor: Option<unsafe extern "system" fn(u32, usize)>,
+            value: usize
         ) -> CUresult,
-        2 => heap_free(halloc: *mut HeapAllocRecord, param2: *mut usize) -> CUresult
+        2 => heap_free(halloc: *mut HeapAllocRecord, value: *mut usize) -> CUresult
     },
     // This fn table is used by OptiX
     [0xB1u8, 0x05, 0x41, 0xE1, 0xF7, 0xC7, 0xC7, 0x4A, 0x9F, 0x64, 0xF2, 0x23, 0xBE, 0x99, 0xF1, 0xE2]
@@ -487,10 +489,12 @@ pub enum ContextStateManager {}
 
 #[repr(C)]
 pub struct HeapAllocRecord {
-    param1: usize,
-    param2: usize,
-    _unknown: usize,
-    global_heap: *mut c_void,
+    pub destructor: Option<unsafe extern "system" fn(u32, usize)>,
+    pub value: usize,
+    // The two fields below are mainatined by the driver,
+    // they form a a doubly-linked list
+    pub prev_alloc: *const HeapAllocRecord,
+    pub next_alloc: *const HeapAllocRecord,
 }
 
 #[derive(Clone, Copy)]
