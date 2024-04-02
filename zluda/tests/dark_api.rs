@@ -33,14 +33,14 @@ unsafe fn heap_alloc_chain<T: CudaDriverFns>(cuda: T) {
     assert_eq!((&*record1).destructor, None);
     assert_eq!((&*record1).value, 1);
     assert_eq!((&*record1).prev_alloc, record2);
-    assert_eq!((&*record1).next_alloc, ptr::null());
+    assert_eq!((&*record1).next_alloc, ptr::null_mut());
     assert_eq!((&*record2).destructor, None);
     assert_eq!((&*record2).value, 2);
     assert_eq!((&*record2).prev_alloc, record3);
     assert_eq!((&*record2).next_alloc, record1);
     assert_eq!((&*record3).destructor, None);
     assert_eq!((&*record3).value, 3);
-    assert_eq!((&*record3).prev_alloc, ptr::null());
+    assert_eq!((&*record3).prev_alloc, ptr::null_mut());
     assert_eq!((&*record3).next_alloc, record2);
 }
 
@@ -82,10 +82,10 @@ unsafe fn heap_free<T: CudaDriverFns>(cuda: T) {
     );
     assert_eq!((&*record1).value, 11);
     assert_eq!((&*record1).prev_alloc, record3);
-    assert_eq!((&*record1).next_alloc, ptr::null());
+    assert_eq!((&*record1).next_alloc, ptr::null_mut());
     assert_eq!((&*record3).destructor, None);
     assert_eq!((&*record3).value, 13);
-    assert_eq!((&*record3).prev_alloc, ptr::null());
+    assert_eq!((&*record3).prev_alloc, ptr::null_mut());
     assert_eq!((&*record3).next_alloc, record1);
 }
 

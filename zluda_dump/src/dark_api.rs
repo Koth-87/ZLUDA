@@ -912,6 +912,25 @@ impl CudaDarkApiDump for CudaDarkApiDumpFns {
         fn_logger.result = Some(original_result);
         original_result
     }
+
+    unsafe fn heap_alloc_impl(
+        guid: &[u8; 16],
+        idx: usize,
+        alloc_ptr: *mut *mut zluda_dark_api::HeapAllocRecord,
+        destructor: Option<unsafe extern "system" fn(u32, usize)>,
+        value: usize,
+    ) -> CUresult {
+        todo!()
+    }
+
+    unsafe fn heap_free_impl(
+        guid: &[u8; 16],
+        idx: usize,
+        halloc: *mut zluda_dark_api::HeapAllocRecord,
+        value: *mut usize,
+    ) -> CUresult {
+        todo!()
+    }
 }
 
 unsafe fn deref_not_null<T>(ptr: *mut *mut T) -> *mut T {

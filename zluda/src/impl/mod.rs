@@ -9,7 +9,7 @@ use std::{
     fs,
     mem::{self, ManuallyDrop, MaybeUninit},
     ptr::{self, NonNull},
-    sync::{atomic::AtomicI32, Once},
+    sync::{atomic::AtomicI32, Mutex, Once},
 };
 
 use self::cache::KernelCache;
@@ -78,11 +78,11 @@ static GLOBAL_STATE: Lazy<GlobalState> = Lazy::INIT;
 
 pub(crate) struct GlobalState {
     pub(crate) devices: Vec<device::Device>,
-    _dark_api_heap: *mut c_void,
     pub(crate) kernel_cache: Option<KernelCache>,
     pub(crate) comgr: Comgr,
     pub(crate) comgr_version: String,
     pub(crate) zero_buffers: bool,
+    pub(crate) dark_api_alloc: Mutex<*mut zluda_dark_api::HeapAllocRecord>,
 }
 assert_impl_one!(GlobalState: Sync);
 
@@ -148,7 +148,7 @@ impl<T: ZludaObject> LiveCheck<T> {
         outer_ptr as *mut Self
     }
 
-    pub unsafe fn as_ref_unchecked(&self) -> & T {
+    pub unsafe fn as_ref_unchecked(&self) -> &T {
         &self.data
     }
 
@@ -462,7 +462,7 @@ pub(crate) fn init(flags: u32) -> Result<(), CUresult> {
     GLOBAL_STATE.init(|| GlobalState {
         devices,
         kernel_cache,
-        _dark_api_heap: global_heap,
+        dark_api_alloc: Mutex::new(ptr::null_mut()),
         comgr,
         comgr_version,
         zero_buffers,

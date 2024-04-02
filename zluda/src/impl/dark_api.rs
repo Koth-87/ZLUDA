@@ -1,8 +1,8 @@
-use super::module;
 use super::{
     context::{self, LocalStorageValue},
     device, FromCuda, IntoCuda, LiveCheck,
 };
+use super::{module, GLOBAL_STATE};
 use crate::r#impl::{dark_api, stream};
 use cuda_types::*;
 use hip_common::zluda_ext::CudaResult;
@@ -192,14 +192,75 @@ impl CudaDarkApi for CudaDarkApiZluda {
         destructor: Option<unsafe extern "system" fn(u32, usize)>,
         value: usize,
     ) -> CUresult {
-        super::unimplemented()
+        unsafe fn heap_alloc_impl(
+            destructor: Option<unsafe extern "system" fn(u32, usize)>,
+            value: usize,
+        ) -> Result<*mut zluda_dark_api::HeapAllocRecord, CUresult> {
+            let state = GLOBAL_STATE.get()?;
+            let entry = Box::into_raw(Box::new(zluda_dark_api::HeapAllocRecord {
+                destructor,
+                value,
+                prev_alloc: ptr::null_mut(),
+                next_alloc: ptr::null_mut(),
+            }));
+            {
+                let mut dark_api_heap = state
+                    .dark_api_alloc
+                    .lock()
+                    .map_err(|_| CUresult::CUDA_ERROR_UNKNOWN)?;
+                let prev_entry = mem::replace(&mut *dark_api_heap, entry);
+                if prev_entry != ptr::null_mut() {
+                    (&mut *prev_entry).prev_alloc = entry;
+                    (&mut *entry).next_alloc = prev_entry;
+                }
+            }
+            Ok(entry)
+        }
+        match heap_alloc_impl(destructor, value) {
+            Ok(result) => {
+                *alloc_ptr = result;
+                CUresult::CUDA_SUCCESS
+            }
+            Err(err) => err,
+        }
     }
 
     unsafe extern "system" fn heap_free(
-        alloc_ptr: *mut zluda_dark_api::HeapAllocRecord,
-        value: *mut usize,
+        alloc_handle: *mut zluda_dark_api::HeapAllocRecord,
+        value_ptr: *mut usize,
     ) -> CUresult {
-        super::unimplemented()
+        unsafe fn heap_free_impl(
+            alloc_handle: *mut zluda_dark_api::HeapAllocRecord,
+        ) -> Result<usize, CUresult> {
+            let state = GLOBAL_STATE.get()?;
+            {
+                let mut dark_api_heap = state
+                    .dark_api_alloc
+                    .lock()
+                    .map_err(|_| CUresult::CUDA_ERROR_UNKNOWN)?;
+                if alloc_handle == *dark_api_heap {
+                    *dark_api_heap = (&*alloc_handle).next_alloc;
+                }
+                if (&*alloc_handle).next_alloc != ptr::null_mut() {
+                    (&mut *(&mut *alloc_handle).next_alloc).prev_alloc =
+                        (&*alloc_handle).prev_alloc;
+                }
+                if (&*alloc_handle).prev_alloc != ptr::null_mut() {
+                    (&mut *(&mut *alloc_handle).prev_alloc).next_alloc =
+                        (&*alloc_handle).next_alloc;
+                }
+            }
+            let value = (&*alloc_handle).value;
+            drop(Box::from_raw(alloc_handle));
+            Ok(value)
+        }
+        match heap_free_impl(alloc_handle) {
+            Ok(value) => {
+                *value_ptr = value;
+                CUresult::CUDA_SUCCESS
+            }
+            Err(err) => err,
+        }
     }
 
     unsafe extern "system" fn device_get_attribute_ex(

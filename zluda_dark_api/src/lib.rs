@@ -285,6 +285,7 @@ dark_api_table!(
     [0x19, 0x5B, 0xCB, 0xF4, 0xD6, 0x7D, 0x02, 0x4A, 0xAC, 0xC5, 0x1D, 0x29, 0xCE, 0xA6, 0x31, 0xAE]
     => HEAP_ACCESS [3] {
         0 => SIZE_OF,
+        #[dump]
         1 => heap_alloc(
             alloc_ptr: *mut *mut HeapAllocRecord,
             // destructor is called only on CUDA exit, on Windows
@@ -292,6 +293,7 @@ dark_api_table!(
             destructor: Option<unsafe extern "system" fn(u32, usize)>,
             value: usize
         ) -> CUresult,
+        #[dump]
         2 => heap_free(halloc: *mut HeapAllocRecord, value: *mut usize) -> CUresult
     },
     // This fn table is used by OptiX
@@ -493,8 +495,8 @@ pub struct HeapAllocRecord {
     pub value: usize,
     // The two fields below are mainatined by the driver,
     // they form a a doubly-linked list
-    pub prev_alloc: *const HeapAllocRecord,
-    pub next_alloc: *const HeapAllocRecord,
+    pub prev_alloc: *mut HeapAllocRecord,
+    pub next_alloc: *mut HeapAllocRecord,
 }
 
 #[derive(Clone, Copy)]
