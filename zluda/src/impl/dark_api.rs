@@ -53,7 +53,7 @@ impl CudaDarkApi for CudaDarkApiZluda {
         module::load_impl(module.cast(), CUmoduleContent::Fatbin(fatbin)).into_cuda()
     }
 
-    unsafe extern "system" fn get_primary_context(
+    unsafe extern "system" fn primary_context_allocate(
         pctx: *mut cuda_types::CUcontext,
         dev: cuda_types::CUdevice,
     ) -> CUresult {
@@ -188,7 +188,7 @@ impl CudaDarkApi for CudaDarkApiZluda {
     }
 
     unsafe extern "system" fn heap_alloc(
-        alloc_ptr: *mut *mut zluda_dark_api::HeapAllocRecord,
+        halloc: *mut *mut zluda_dark_api::HeapAllocRecord,
         destructor: Option<unsafe extern "system" fn(u32, usize)>,
         value: usize,
     ) -> CUresult {
@@ -218,7 +218,7 @@ impl CudaDarkApi for CudaDarkApiZluda {
         }
         match heap_alloc_impl(destructor, value) {
             Ok(result) => {
-                *alloc_ptr = result;
+                *halloc = result;
                 CUresult::CUDA_SUCCESS
             }
             Err(err) => err,
@@ -452,6 +452,13 @@ impl CudaDarkApi for CudaDarkApiZluda {
     ) -> CUresult {
         *is_wrapped = 0;
         CUresult::CUDA_SUCCESS
+    }
+
+    unsafe extern "system" fn primary_context_create_with_flags(
+        dev: CUdevice,
+        flags: u32,
+    ) -> CUresult {
+        todo!()
     }
 }
 

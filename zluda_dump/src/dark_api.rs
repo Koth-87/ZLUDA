@@ -945,11 +945,39 @@ impl CudaDarkApiDump for CudaDarkApiDumpFns {
     unsafe fn heap_alloc_impl(
         guid: &[u8; 16],
         idx: usize,
-        alloc_ptr: *mut *mut zluda_dark_api::HeapAllocRecord,
+        halloc: *mut *mut zluda_dark_api::HeapAllocRecord,
         destructor: Option<unsafe extern "system" fn(u32, usize)>,
         value: usize,
     ) -> CUresult {
-        todo!()
+        let arguments_writer = Box::new(move |writer: &mut dyn std::io::Write| {
+            writer.write_all(b"(halloc: ")?;
+            format::CudaDisplay::write(&halloc.cast::<*mut c_void>(), "", 0, writer)?;
+            writer.write_all(b", destructor: ")?;
+            format::CudaDisplay::write(
+                &mem::transmute::<_, *const c_void>(destructor),
+                "",
+                0,
+                writer,
+            )?;
+            write!(writer, ")")
+        });
+        let global_state = &mut *super::GLOBAL_STATE.lock().unwrap();
+        let mut fn_logger = global_state.log_factory.get_logger_dark_api(
+            CUuuid {
+                bytes: guid.clone(),
+            },
+            idx,
+            Some(arguments_writer),
+        );
+        let cuda_state = &mut global_state.delayed_state.unwrap_mut().cuda_state;
+        let original_ptr = cuda_state.dark_api.overrides[guid].1.add(idx);
+        let original_fn = mem::transmute::<
+            _,
+            unsafe extern "system" fn(*mut *mut zluda_dark_api::HeapAllocRecord, usize) -> CUresult,
+        >(*original_ptr);
+        let original_result = original_fn(halloc, value);
+        fn_logger.result = Some(original_result);
+        original_result
     }
 
     unsafe fn heap_free_impl(
@@ -957,6 +985,47 @@ impl CudaDarkApiDump for CudaDarkApiDumpFns {
         idx: usize,
         halloc: *mut zluda_dark_api::HeapAllocRecord,
         value: *mut usize,
+    ) -> CUresult {
+        let arguments_writer = Box::new(move |writer: &mut dyn std::io::Write| {
+            writer.write_all(b"(halloc: ")?;
+            format::CudaDisplay::write(&halloc.cast::<c_void>(), "", 0, writer)?;
+            writer.write_all(b", value: ")?;
+            format::CudaDisplay::write(&value, "", 0, writer)?;
+            write!(writer, ")")
+        });
+        let global_state = &mut *super::GLOBAL_STATE.lock().unwrap();
+        let mut fn_logger = global_state.log_factory.get_logger_dark_api(
+            CUuuid {
+                bytes: guid.clone(),
+            },
+            idx,
+            Some(arguments_writer),
+        );
+        let cuda_state = &mut global_state.delayed_state.unwrap_mut().cuda_state;
+        let original_ptr = cuda_state.dark_api.overrides[guid].1.add(idx);
+        let original_fn = mem::transmute::<
+            _,
+            unsafe extern "system" fn(*mut zluda_dark_api::HeapAllocRecord, *mut usize) -> CUresult,
+        >(*original_ptr);
+        let original_result = original_fn(halloc, value);
+        fn_logger.result = Some(original_result);
+        original_result
+    }
+
+    unsafe fn primary_context_allocate_impl(
+        guid: &[u8; 16],
+        idx: usize,
+        pctx: *mut CUcontext,
+        dev: CUdevice,
+    ) -> CUresult {
+        todo!()
+    }
+
+    unsafe fn primary_context_create_with_flags_impl(
+        guid: &[u8; 16],
+        idx: usize,
+        dev: CUdevice,
+        flags: u32,
     ) -> CUresult {
         todo!()
     }

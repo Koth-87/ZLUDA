@@ -203,7 +203,18 @@ dark_api_table!(
             module: *mut CUmodule,
             fatbinc_wrapper: *const FatbincWrapper
         ) -> CUresult,
-        2 => get_primary_context(pctx: *mut CUcontext, dev: CUdevice) -> CUresult,
+        // Allocate primary context and return the the context handle.
+        // Context allocated this way is not usable in any useful sense:
+        //   * Primary context refcount is 0
+        //   * Can't be queried for its properties through cuCtxGet...
+        //   * Can't be used to allocate memory
+        //   * It can be used for context stack manipulation (cuCtxSetCurrent(...) etc)
+        //     and one can query for device with cuCtxGetDevice(...)
+        #[dump]
+        2 => primary_context_allocate(pctx: *mut CUcontext, dev: CUdevice) -> CUresult,
+        // This fails if the primary context is already active
+        #[dump]
+        4 => primary_context_create_with_flags(dev: CUdevice, flags: u32) -> CUresult,
         #[dump]
         6 => get_module_from_cubin_ex1(
             module: *mut CUmodule,
@@ -287,7 +298,7 @@ dark_api_table!(
         0 => SIZE_OF,
         #[dump]
         1 => heap_alloc(
-            alloc_ptr: *mut *mut HeapAllocRecord,
+            halloc: *mut *mut HeapAllocRecord,
             // destructor is called only on CUDA exit, on Windows
             // that is DLL unload from DllMain
             destructor: Option<unsafe extern "system" fn(u32, usize)>,
