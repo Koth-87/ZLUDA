@@ -109,6 +109,9 @@ unsafe fn reset(tex_ref: *mut textureReference) -> Result<(), CUresult> {
         return Err(CUresult::CUDA_ERROR_INVALID_VALUE);
     }
     let mut res_desc = mem::zeroed();
+    if (*tex_ref).textureObject == ptr::null_mut() {
+        return Ok(());
+    }
     hip_call_cuda!(hipGetTextureObjectResourceDesc(
         &mut res_desc,
         (*tex_ref).textureObject

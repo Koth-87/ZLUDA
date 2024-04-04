@@ -2247,31 +2247,48 @@ ShiftNormalization: ast::ShiftNormalization = {
 InstVote: ast::Instruction<ast::ParsedArgParams<'input>> = {
     "vote" ".ballot" ".sync" ".b32" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
         let mode = ast::VoteMode::Ballot;
-        let sync = true;
         let negate_pred = negate.is_some();
         let args = ast::Arg3 {dst, src1, src2};
-        ast::Instruction::Vote(ast::VoteDetails{mode, sync, negate_pred}, args)
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync: true, negate_pred}, args)
     },
-    "vote" <sync:".sync"?> ".ballot" ".b32" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
+    "vote" ".sync" ".ballot" ".b32" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
         let mode = ast::VoteMode::Ballot;
-        let sync = sync.is_some();
         let negate_pred = negate.is_some();
         let args = ast::Arg3 {dst, src1, src2};
-        ast::Instruction::Vote(ast::VoteDetails{mode, sync, negate_pred}, args)
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync: true, negate_pred}, args)
     },
-    "vote" <sync:".sync"?> ".any" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
+    "vote" ".ballot" ".b32" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> => {
+        let mode = ast::VoteMode::Ballot;
+        let negate_pred = negate.is_some();
+        let src2 = ast::Operand::Imm(ast::ImmediateValue::U64(u32::MAX as u64));
+        let args = ast::Arg3 {dst, src1, src2};
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync: false, negate_pred}, args)
+    },
+    "vote" ".sync" ".any" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
         let mode = ast::VoteMode::Any;
-        let sync = sync.is_some();
         let negate_pred = negate.is_some();
         let args = ast::Arg3 {dst, src1, src2};
-        ast::Instruction::Vote(ast::VoteDetails{mode, sync, negate_pred}, args)
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync: true, negate_pred}, args)
     },
-    "vote" <sync:".sync"?> ".all" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
+    "vote" ".any" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> => {
+        let mode = ast::VoteMode::Any;
+        let negate_pred = negate.is_some();
+        let src2 = ast::Operand::Imm(ast::ImmediateValue::U64(u32::MAX as u64));
+        let args = ast::Arg3 {dst, src1, src2};
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync: false, negate_pred}, args)
+    },
+    "vote" ".sync" ".all" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> "," <src2:Operand> => {
         let mode = ast::VoteMode::All;
-        let sync = sync.is_some();
         let negate_pred = negate.is_some();
         let args = ast::Arg3 {dst, src1, src2};
-        ast::Instruction::Vote(ast::VoteDetails{mode, sync, negate_pred}, args)   
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync: true, negate_pred}, args)   
+    },
+    "vote" ".all" ".pred" <dst:DstOperand> "," <negate:"!"?> <src1:Operand> => {
+        let mode = ast::VoteMode::All;
+        let negate_pred = negate.is_some();
+        let src2 = ast::Operand::Imm(ast::ImmediateValue::U64(u32::MAX as u64));
+        let args = ast::Arg3 {dst, src1, src2};
+        ast::Instruction::Vote(ast::VoteDetails{mode, sync: false, negate_pred}, args)   
     }
 }
 

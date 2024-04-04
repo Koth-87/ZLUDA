@@ -1,5 +1,5 @@
 // Compile and disassemble:
-//   python3 ./cvt.py > cvt.h && /opt/rocm/llvm/bin/clang -std=c++17 -Xclang -no-opaque-pointers -Wall -Wextra -Wsign-compare -Wconversion -x hip zluda_ptx_impl.cpp -S -emit-llvm --cuda-device-only -nogpulib -O3 -Xclang -fallow-half-arguments-and-returns -o - | sed -e 's/define/define linkonce_odr/g' | sed -e '/@llvm.used/d' | sed -e 's/\"target-cpu\"=\"[^\"]*\"//g' | sed -e 's/\"target-features\"=\"[^\"]*\"//g' | sed -e 's/\"denormal-fp-math-f32\"=\"[^\"]*\"//g' | sed -e 's/!llvm.module.flags = !{!0, !1, !2, !3, !4}/!llvm.module.flags = !{ }/g' | sed -e 's/memory(none)/readnone/g' | sed -e 's/memory(argmem: readwrite, inaccessiblemem: readwrite)/inaccessiblemem_or_argmemonly/g' | sed -e 's/memory(read)/readonly/g' | sed -e 's/memory(argmem: readwrite)/argmemonly/g'  | llvm-as-13 -o zluda_ptx_impl.bc && /opt/rocm/llvm/bin/llvm-dis zluda_ptx_impl.bc
+//   python3 ./cvt.py > cvt.h && /opt/rocm/llvm/bin/clang -std=c++17 -Xclang -no-opaque-pointers -Wall -Wextra -Wsign-compare -Wconversion -x hip zluda_ptx_impl.cpp -S -emit-llvm --cuda-device-only -nogpulib -O3 -Xclang -fallow-half-arguments-and-returns -o - | sed -e 's/define/define linkonce_odr/g' | sed -e '/@llvm.used/d' | sed -e 's/\"target-cpu\"=\"[^\"]*\"//g' | sed -e 's/\"target-features\"=\"[^\"]*\"//g' | sed -e 's/\"denormal-fp-math-f32\"=\"[^\"]*\"//g' | sed -e 's/!llvm.module.flags = !{!0, !1, !2, !3, !4}/!llvm.module.flags = !{ }/g' | sed -e 's/memory(none)/readnone/g' | sed -e 's/memory(argmem: readwrite, inaccessiblemem: readwrite)/inaccessiblemem_or_argmemonly/g' | sed -e 's/memory(read)/readonly/g' | sed -e 's/memory(argmem: readwrite)/argmemonly/g' | sed -e 's/memory(argmem: readwrite)/argmemonly/g' | sed -e 's/internal fastcc void @__assert_fail/fastcc void @__assert_fail/g'  | llvm-as-13 -o zluda_ptx_impl.bc && /opt/rocm/llvm/bin/llvm-dis zluda_ptx_impl.bc
 // Compile to binary:
 //   /opt/rocm/llvm/bin/clang -x ir -target amdgcn-amd-amdhsa -Xlinker --no-undefined zluda_ptx_impl.bc -mno-wavefrontsize64 -mcpu=gfx1030
 // Decompile:
@@ -153,6 +153,110 @@ static __device__ float4::Native_vec_ __pack_to_float4(const T &t)
     w.value = t.w;
     result.w = w.float_;
     return result;
+}
+
+typedef enum
+{
+    HSA_EXT_IMAGE_CHANNEL_ORDER_A = 0,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_R = 1,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_RX = 2,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_RG = 3,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_RGX = 4,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_RA = 5,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_RGB = 6,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_RGBX = 7,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_RGBA = 8,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_BGRA = 9,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_ARGB = 10,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_ABGR = 11,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_SRGB = 12,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_SRGBX = 13,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_SRGBA = 14,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_SBGRA = 15,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_INTENSITY = 16,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_LUMINANCE = 17,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_DEPTH = 18,
+    HSA_EXT_IMAGE_CHANNEL_ORDER_DEPTH_STENCIL = 19
+} hsa_ext_image_channel_order_t;
+
+__device__ uint32_t get_channels_num(int x)
+{
+    switch ((hsa_ext_image_channel_order_t)x)
+    {
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_A:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_R:
+        return 1;
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_RG:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_RA:
+        return 2;
+
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_RGB:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_SRGB:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_SRGBX:
+        return 3;
+
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_RGBA:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_BGRA:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_ARGB:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_ABGR:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_SRGBA:
+    case HSA_EXT_IMAGE_CHANNEL_ORDER_SBGRA:
+        return 4;
+    default:
+        __builtin_trap();
+        return 0;
+    }
+}
+
+template <class T>
+inline __device__ void verify_channels(int x);
+
+template <>
+inline __device__ void verify_channels<uchar1>(int x)
+{
+    assert(get_channels_num(x) == 1);
+}
+template <>
+inline __device__ void verify_channels<ushort1>(int x)
+{
+    assert(get_channels_num(x) == 1);
+}
+template <>
+inline __device__ void verify_channels<uint1>(int x)
+{
+    assert(get_channels_num(x) == 1);
+}
+
+template <>
+inline __device__ void verify_channels<uchar2>(int x)
+{
+    assert(get_channels_num(x) == 2);
+}
+template <>
+inline __device__ void verify_channels<ushort2>(int x)
+{
+    assert(get_channels_num(x) == 2);
+}
+template <>
+inline __device__ void verify_channels<uint2>(int x)
+{
+    assert(get_channels_num(x) == 2);
+}
+
+template <>
+inline __device__ void verify_channels<uchar4>(int x)
+{
+    assert(get_channels_num(x) == 4);
+}
+template <>
+inline __device__ void verify_channels<ushort4>(int x)
+{
+    assert(get_channels_num(x) == 4);
+}
+template <>
+inline __device__ void verify_channels<uint4>(int x)
+{
+    assert(get_channels_num(x) == 4);
 }
 
 extern "C"
@@ -471,6 +575,7 @@ extern "C"
         hipTextureObject_t textureObject = ptr->textureObject;                                                                  \
         TEXTURE_OBJECT_PARAMETERS_INIT;                                                                                         \
         (void)s;                                                                                                                \
+        verify_channels<HIP_TYPE>(__ockl_image_channel_order_1D(i));                                                            \
         int byte_coord = __hipGetPixelAddr(x.x, __ockl_image_channel_data_type_1D(i), __ockl_image_channel_order_1D(i));        \
         return __hipMapFrom<HIP_TYPE>(__ockl_image_load_1D(i, byte_coord)).data;                                                \
     }                                                                                                                           \
@@ -478,6 +583,8 @@ extern "C"
     HIP_TYPE::Native_vec_ FUNC(suld_b_indirect_1d##VEC##_##TYPE##_trap)(uint64_t serf_arg, int1::Native_vec_ x)                 \
     {                                                                                                                           \
         hipSurfaceObject_t surfObj = (hipSurfaceObject_t)serf_arg;                                                              \
+        __HIP_SURFACE_OBJECT_PARAMETERS_INIT                                                                                    \
+        verify_channels<HIP_TYPE>(__ockl_image_channel_order_1D(i));                                                            \
         HIP_TYPE result;                                                                                                        \
         surf1Dread(&result, surfObj, x.x, hipBoundaryModeTrap);                                                                 \
         return result.data;                                                                                                     \
@@ -509,6 +616,8 @@ extern "C"
     HIP_TYPE::Native_vec_ FUNC(suld_b_indirect_2d##VEC##_##TYPE##_trap)(uint64_t serf_arg, int2::Native_vec_ x)                     \
     {                                                                                                                               \
         hipSurfaceObject_t surfObj = (hipSurfaceObject_t)serf_arg;                                                                  \
+        __HIP_SURFACE_OBJECT_PARAMETERS_INIT                                                                                        \
+        verify_channels<HIP_TYPE>(__ockl_image_channel_order_2D(i));                                                                \
         HIP_TYPE result;                                                                                                            \
         surf2Dread(&result, surfObj, x.x, x.y);                                                                                     \
         return result.data;                                                                                                         \
@@ -540,6 +649,8 @@ extern "C"
     HIP_TYPE::Native_vec_ FUNC(suld_b_indirect_3d##VEC##_##TYPE##_trap)(uint64_t serf_arg, int4::Native_vec_ x)                     \
     {                                                                                                                               \
         hipSurfaceObject_t surfObj = (hipSurfaceObject_t)serf_arg;                                                                  \
+        __HIP_SURFACE_OBJECT_PARAMETERS_INIT                                                                                        \
+        verify_channels<HIP_TYPE>(__ockl_image_channel_order_3D(i));                                                                \
         HIP_TYPE result;                                                                                                            \
         surf3Dread(&result, surfObj, x.x, x.y, x.z);                                                                                \
         return result.data;                                                                                                         \
@@ -635,6 +746,8 @@ extern "C"
     void FUNC(sust_b_indirect_1d##VEC##_##TYPE##_trap)(uint64_t serf_arg, int1::Native_vec_ coord, HIP_TYPE::Native_vec_ data)                 \
     {                                                                                                                                          \
         hipSurfaceObject_t surfObj = (hipSurfaceObject_t)serf_arg;                                                                             \
+        __HIP_SURFACE_OBJECT_PARAMETERS_INIT                                                                                                   \
+        verify_channels<HIP_TYPE>(__ockl_image_channel_order_1D(i));                                                                           \
         HIP_TYPE hip_data;                                                                                                                     \
         hip_data.data = data;                                                                                                                  \
         surf1Dwrite(hip_data, surfObj, coord.x);                                                                                               \
@@ -668,6 +781,8 @@ extern "C"
     void FUNC(sust_b_indirect_2d##VEC##_##TYPE##_trap)(uint64_t serf_arg, int2::Native_vec_ coord, HIP_TYPE::Native_vec_ data)                 \
     {                                                                                                                                          \
         hipSurfaceObject_t surfObj = (hipSurfaceObject_t)serf_arg;                                                                             \
+        __HIP_SURFACE_OBJECT_PARAMETERS_INIT                                                                                                   \
+        verify_channels<HIP_TYPE>(__ockl_image_channel_order_2D(i));                                                                           \
         HIP_TYPE hip_data;                                                                                                                     \
         hip_data.data = data;                                                                                                                  \
         surf2Dwrite(hip_data, surfObj, coord.x, coord.y);                                                                                      \
@@ -702,6 +817,7 @@ extern "C"
     {                                                                                                                                          \
         hipSurfaceObject_t surfObj = (hipSurfaceObject_t)serf_arg;                                                                             \
         __HIP_SURFACE_OBJECT_PARAMETERS_INIT;                                                                                                  \
+        verify_channels<HIP_TYPE>(__ockl_image_channel_order_1D(i));                                                                           \
         int byte_coord = __hipGetPixelAddr(coord.x, __ockl_image_channel_data_type_3D(i), __ockl_image_channel_order_3D(i));                   \
         HIP_TYPE hip_data;                                                                                                                     \
         hip_data.data = data;                                                                                                                  \

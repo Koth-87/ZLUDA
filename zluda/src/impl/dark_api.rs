@@ -62,6 +62,27 @@ impl CudaDarkApi for CudaDarkApiZluda {
         device::primary_ctx_get(pctx, hip_dev).into_cuda()
     }
 
+    unsafe extern "system" fn primary_context_create_with_flags(
+        dev: CUdevice,
+        flags: u32,
+    ) -> CUresult {
+        unsafe fn primary_context_create_with_flags_impl(
+            dev: CUdevice,
+            flags: u32,
+        ) -> Result<(), CUresult> {
+            let hip_dev = FromCuda::from_cuda(dev);
+            device::primary_ctx(hip_dev, |ctx, _| {
+                if ctx.ref_count > 0 {
+                    return Err(CUresult::CUDA_ERROR_PRIMARY_CONTEXT_ACTIVE);
+                }
+                ctx.ref_count = 1;
+                ctx.flags = flags;
+                Ok(())
+            })?
+        }
+        primary_context_create_with_flags_impl(dev, flags).into_cuda()
+    }
+
     unsafe extern "system" fn get_module_from_cubin_ex1(
         module: *mut cuda_types::CUmodule,
         fatbinc_wrapper: *const zluda_dark_api::FatbincWrapper,
@@ -439,7 +460,7 @@ impl CudaDarkApi for CudaDarkApiZluda {
     unsafe extern "system" fn get_hip_stream(
         stream: CUstream,
     ) -> CudaResult<*const std::os::raw::c_void> {
-        let cuda_object: *mut LiveCheck<stream::StreamData> = stream as *mut stream::Stream;
+        let cuda_object = stream as *mut stream::Stream;
         stream::as_hip_stream(cuda_object)
             .map(|ptr| ptr as *const _)
             .into()
@@ -452,13 +473,6 @@ impl CudaDarkApi for CudaDarkApiZluda {
     ) -> CUresult {
         *is_wrapped = 0;
         CUresult::CUDA_SUCCESS
-    }
-
-    unsafe extern "system" fn primary_context_create_with_flags(
-        dev: CUdevice,
-        flags: u32,
-    ) -> CUresult {
-        todo!()
     }
 }
 

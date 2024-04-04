@@ -89,6 +89,7 @@ cuda_function_declarations!(
         cuModuleGetTexRef,
         cuMemGetInfo_v2,
         cuMemAlloc_v2,
+        cuMemAllocHost_v2,
         cuMemAllocManaged,
         cuMemAllocPitch_v2,
         cuMemFree_v2,
@@ -631,6 +632,13 @@ mod definitions {
         bytesize: usize,
     ) -> Result<(), CUresult> {
         memory::alloc(dptr, bytesize)
+    }
+
+    pub(crate) unsafe fn cuMemAllocHost_v2(
+        pp: *mut *mut ::std::os::raw::c_void,
+        bytesize: usize,
+    ) -> hipError_t {
+        hipMemAllocHost(pp, bytesize)
     }
 
     pub(crate) unsafe fn cuMemAllocManaged(

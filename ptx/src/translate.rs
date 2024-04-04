@@ -3362,6 +3362,7 @@ fn to_llvm_module_impl2<'a, 'input>(
     let translation_module = fix_special_registers(translation_module)?;
     let translation_module = insert_mem_ssa_statements(translation_module)?;
     let translation_module = expand_arguments(translation_module)?;
+    let translation_module = disgusting_temporary_hack(translation_module)?;
     let mut translation_module = deparamize_variable_declarations(translation_module)?;
     if let Some(ref mut raytracing_state) = raytracing {
         // raytracing passes rely heavily on particular PTX patterns, they must run before implicit conversions
@@ -3396,6 +3397,57 @@ fn to_llvm_module_impl2<'a, 'input>(
         _llvm_context: llvm_context,
         bitcode_modules,
     })
+}
+
+fn disgusting_temporary_hack(
+    translation_module: TranslationModule<ExpandedArgParams>,
+) -> Result<TranslationModule<ExpandedArgParams>, TranslateError> {
+    convert_methods_simple(translation_module, disgusting_temporary_hack_impl)
+}
+
+fn disgusting_temporary_hack_impl<'input>(
+    id_defs: &mut IdNameMapBuilder<'input>,
+    fn_body: Vec<ExpandedStatement>,
+) -> Result<Vec<ExpandedStatement>, TranslateError> {
+    let mut result = Vec::with_capacity(fn_body.len());
+    for instr in fn_body {
+        match instr {
+            Statement::Instruction(ast::Instruction::Sust(
+                surf @ ast::SurfaceDetails {
+                    type_: ast::ScalarType::B64,
+                    ..
+                },
+                mut args,
+            )) => {
+                let dst = id_defs.register_intermediate(Some((
+                    ast::Type::Vector(ast::ScalarType::B16, 4),
+                    ast::StateSpace::Reg,
+                )));
+                result.push(Statement::Conversion(ImplicitConversion {
+                    src: args.value,
+                    dst,
+                    from_type: ast::Type::Scalar(ast::ScalarType::B64),
+                    to_type: ast::Type::Vector(ast::ScalarType::B16, 4),
+                    from_space: ast::StateSpace::Reg,
+                    to_space: ast::StateSpace::Reg,
+                    kind: ConversionKind::Default,
+                }));
+                args.value = dst;
+                result.push(Statement::Instruction(ast::Instruction::Sust(
+                    ast::SurfaceDetails {
+                        type_: ast::ScalarType::B16,
+                        vector: Some(4),
+                        geometry: surf.geometry,
+                        clamp: surf.clamp,
+                        direct: surf.direct,
+                    },
+                    args,
+                )));
+            }
+            s => result.push(s),
+        }
+    }
+    Ok(result)
 }
 
 // From "Performance Tips for Frontend Authors" (https://llvm.org/docs/Frontend/PerformanceTips.html):
@@ -6308,8 +6360,9 @@ impl<T: ArgParamsEx> ast::Instruction<T> {
             ast::Instruction::Exit => ast::Instruction::Exit,
             ast::Instruction::Ret(d) => ast::Instruction::Ret(d),
             ast::Instruction::Cvta(d, a) => {
-                let inst_type = ast::Type::Scalar(ast::ScalarType::B64);
-                ast::Instruction::Cvta(d, a.map(visitor, &inst_type)?)
+                let inst_type = ast::Type::Scalar(d.size.to_type());
+                let src_space = d.from;
+                ast::Instruction::Cvta(d, a.map_cvta(visitor, &inst_type, src_space)?)
             }
             ast::Instruction::Mad(d, a) => {
                 let inst_type = d.get_type();
@@ -7615,6 +7668,38 @@ impl<T: ArgParamsEx> ast::Arg2<T> {
         })
     }
 
+    fn map_cvta<U: ArgParamsEx, V: ArgumentMapVisitor<T, U>>(
+        self,
+        visitor: &mut V,
+        t: &ast::Type,
+        source_space: ast::StateSpace,
+    ) -> Result<ast::Arg2<U>, TranslateError> {
+        let new_dst = visitor.operand(
+            ArgumentDescriptor {
+                op: self.dst,
+                is_dst: true,
+                is_memory_access: false,
+                non_default_implicit_conversion: None,
+            },
+            t,
+            ast::StateSpace::Reg,
+        )?;
+        let new_src = visitor.operand(
+            ArgumentDescriptor {
+                op: self.src,
+                is_dst: false,
+                is_memory_access: false,
+                non_default_implicit_conversion: None,
+            },
+            &ast::Type::Scalar(ast::ScalarType::B8),
+            source_space,
+        )?;
+        Ok(ast::Arg2 {
+            dst: new_dst,
+            src: new_src,
+        })
+    }
+
     fn map_cvt<U: ArgParamsEx, V: ArgumentMapVisitor<T, U>>(
         self,
         visitor: &mut V,
@@ -8056,9 +8141,9 @@ impl<T: ArgParamsEx> ast::Arg3<T> {
 
 fn texture_geometry_to_vec_length(geometry: ast::TextureGeometry) -> u8 {
     match geometry {
-        ast::TextureGeometry::OneD | ast::TextureGeometry::Array1D => 1u8,
-        ast::TextureGeometry::TwoD | ast::TextureGeometry::Array2D => 2,
-        ast::TextureGeometry::ThreeD => 4,
+        ast::TextureGeometry::OneD => 1u8,
+        ast::TextureGeometry::TwoD | ast::TextureGeometry::Array1D => 2,
+        ast::TextureGeometry::ThreeD | ast::TextureGeometry::Array2D => 4,
     }
 }
 
@@ -9092,7 +9177,9 @@ fn should_convert_relaxed_src_wrapper(
     }
     match should_convert_relaxed_src(operand_type, instruction_type) {
         conv @ Some(_) => Ok(conv),
-        None => Err(TranslateError::mismatched_type()),
+        None => {
+            Err(TranslateError::mismatched_type())
+        }
     }
 }
 
@@ -9252,6 +9339,15 @@ impl ast::ReductionOp {
         match self {
             ast::ReductionOp::And | ast::ReductionOp::Or => ast::ScalarType::Pred,
             ast::ReductionOp::Popc => ast::ScalarType::U32,
+        }
+    }
+}
+
+impl ast::CvtaSize {
+    pub(crate) fn to_type(self) -> ast::ScalarType {
+        match self {
+            ast::CvtaSize::U32 => ast::ScalarType::U32,
+            ast::CvtaSize::U64 => ast::ScalarType::U64,
         }
     }
 }

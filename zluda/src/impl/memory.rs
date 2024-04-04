@@ -1,7 +1,7 @@
 use super::stream::Stream;
 use super::{hipfix, stream};
 use crate::hip_call_cuda;
-use crate::r#impl::{memcpy2d_from_cuda, GLOBAL_STATE};
+use crate::r#impl::{context, memcpy2d_from_cuda, GLOBAL_STATE};
 use cuda_types::*;
 use hip_runtime_sys::*;
 use std::{mem, ptr};
@@ -12,8 +12,14 @@ pub(crate) unsafe fn alloc(dptr: *mut hipDeviceptr_t, mut bytesize: usize) -> Re
     }
     let zero_buffers = GLOBAL_STATE.get()?.zero_buffers;
     bytesize = hipfix::alloc_round_up(bytesize);
-    let mut ptr = mem::zeroed();
-    hip_call_cuda!(hipMalloc(&mut ptr, bytesize));
+    let ptr = context::with_current(|ctx| {
+        ctx.with_inner_mut(|mutable| {
+            let mut ptr = mem::zeroed();
+            hip_call_cuda!(hipMalloc(&mut ptr, bytesize));
+            mutable.allocations.insert(ptr);
+            Ok(ptr)
+        })
+    })???;
     if zero_buffers {
         hip_call_cuda!(hipMemsetD32(hipDeviceptr_t(ptr), 0, bytesize / 4));
     }

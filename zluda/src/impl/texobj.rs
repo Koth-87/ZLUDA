@@ -14,6 +14,8 @@ pub(crate) unsafe fn create(
         return hipError_t::hipErrorInvalidValue;
     }
     hipfix::array::with_resource_desc(p_res_desc, |p_res_desc| {
-        hipTexObjectCreate(p_tex_object, p_res_desc, p_tex_desc, p_res_view_desc)
+        let mut p_tex_desc = *p_tex_desc;
+        p_tex_desc.maxAnisotropy = 0;
+        hipTexObjectCreate(p_tex_object, p_res_desc, &p_tex_desc, p_res_view_desc)
     })
 }

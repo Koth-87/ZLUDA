@@ -2698,10 +2698,7 @@ fn emit_inst_cvta(
         get_llvm_pointer_type(ctx, &ast::Type::Scalar(ast::ScalarType::B8), details.to)?;
     let cast_result =
         unsafe { LLVMBuildAddrSpaceCast(builder, src_ptr, to_ptr_type, b"\0".as_ptr() as _) };
-    let scalar_type = match details.size {
-        ast::CvtaSize::U32 => ast::ScalarType::U32,
-        ast::CvtaSize::U64 => ast::ScalarType::U64,
-    };
+    let scalar_type = details.size.to_type();
     let type_ = get_llvm_type(ctx, &ast::Type::Scalar(scalar_type))?;
     ctx.names.register_result(args.dst, |dst_name| unsafe {
         LLVMBuildPtrToInt(builder, cast_result, type_, dst_name)

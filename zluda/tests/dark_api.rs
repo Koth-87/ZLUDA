@@ -109,9 +109,9 @@ unsafe fn dark_api_primary_context_allocate<T: CudaDriverFns>(cuda: T) {
         CUresult::CUDA_SUCCESS
     );
     let mut api_version = mem::zeroed();
-    assert_ne!(
+    assert_eq!(
         cuda.cuCtxGetApiVersion(ctx1, &mut api_version),
-        CUresult::CUDA_SUCCESS
+        CUresult::CUDA_ERROR_INVALID_CONTEXT
     );
     let mut flags = 0;
     let mut active = 0;

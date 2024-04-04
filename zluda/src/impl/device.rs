@@ -513,7 +513,7 @@ unsafe fn primary_ctx_get_or_retain(
         return Err(CUresult::CUDA_ERROR_INVALID_VALUE);
     }
     let ctx = primary_ctx(hip_dev, |ctx, raw_ctx| {
-        if increment_refcount || ctx.ref_count == 0  {
+        if increment_refcount {
             ctx.ref_count += 1;
         }
         Ok(raw_ctx.cast_mut())

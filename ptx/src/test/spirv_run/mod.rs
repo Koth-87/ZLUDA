@@ -359,6 +359,7 @@ test_ptx!(
     [1923569713u64, 1923569712]
 );
 test_ptx!(mul_24_lo, [0xeffa4964u32, 0x46e7e28c], [3336989360u32, 3068553904]);
+test_ptx!(cvta_shared, [13u64, 17u64], [30u64]);
 
 test_ptx_warp!(
     shfl,

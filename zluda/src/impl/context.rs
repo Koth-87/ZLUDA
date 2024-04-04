@@ -92,6 +92,9 @@ impl ContextData {
                 let mut primary_ctx_data = mutex_over_primary_ctx_data
                     .lock()
                     .map_err(|_| CUresult::CUDA_ERROR_UNKNOWN)?;
+                if primary_ctx_data.ref_count == 0 {
+                    return Err(CUresult::CUDA_ERROR_CONTEXT_IS_DESTROYED);
+                }
                 fn_(&mut primary_ctx_data.mutable)
             }
             ContextVariant::NonPrimary(NonPrimaryContextData { ref mutable, .. }) => {
@@ -104,6 +107,7 @@ impl ContextData {
 }
 
 pub(crate) struct ContextInnerMutable {
+    pub(crate) allocations: FxHashSet<*mut c_void>,
     pub(crate) streams: FxHashSet<*mut stream::Stream>,
     pub(crate) modules: FxHashSet<*mut module::Module>,
     // Field below is here to support CUDA Driver Dark API
@@ -113,6 +117,7 @@ pub(crate) struct ContextInnerMutable {
 impl ContextInnerMutable {
     pub(crate) fn new() -> Self {
         ContextInnerMutable {
+            allocations: FxHashSet::default(),
             streams: FxHashSet::default(),
             modules: FxHashSet::default(),
             local_storage: FxHashMap::default(),
@@ -240,7 +245,13 @@ pub(crate) unsafe fn get_api_version(ctx: *mut Context, version: *mut u32) -> Re
     if ctx == ptr::null_mut() {
         return Err(CUresult::CUDA_ERROR_INVALID_CONTEXT);
     }
-    //let ctx = LiveCheck::as_result(ctx)?;
+    let ctx = LiveCheck::as_result(ctx)?;
+    if let ContextVariant::Primary(ref primary) = ctx.variant {
+        let primary = primary.lock().map_err(|_| CUresult::CUDA_ERROR_UNKNOWN)?;
+        if primary.ref_count == 0 {
+            return Err(CUresult::CUDA_ERROR_INVALID_CONTEXT);
+        }
+    }
     //TODO: query device for properties roughly matching CUDA API version
     *version = 3020;
     Ok(())
