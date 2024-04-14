@@ -74,6 +74,7 @@ cuda_function_declarations!(
         cuCtxSynchronize,
         cuCtxSetCacheConfig,
         cuCtxGetApiVersion,
+        cuCtxGetSharedMemConfig,
         cuFuncSetCacheConfig,
         cuLibraryLoadData,
         cuLibraryGetModule,
@@ -204,6 +205,7 @@ cuda_function_declarations!(
         cuGraphInstantiate,
         cuGraphInstantiate_v2,
         cuGraphLaunch,
+        cuGraphicsResourceSetMapFlags_v2,
         cuGraphicsSubResourceGetMappedArray,
         cuGraphicsGLRegisterBuffer,
         cuGraphicsGLRegisterImage,
@@ -515,6 +517,10 @@ mod definitions {
         version: *mut ::std::os::raw::c_uint,
     ) -> Result<(), CUresult> {
         context::get_api_version(ctx, version)
+    }
+
+    pub(crate) unsafe fn cuCtxGetSharedMemConfig(pConfig: *mut hipSharedMemConfig) -> hipError_t {
+        hipDeviceGetSharedMemConfig(pConfig)
     }
 
     pub(crate) unsafe fn cuFuncSetCacheConfig(
@@ -1563,6 +1569,13 @@ mod definitions {
         graph::launch(hGraph, hStream)
     }
 
+    pub(crate) unsafe fn cuGraphicsResourceSetMapFlags_v2(
+        resource: hipGraphicsResource_t,
+        flags: ::std::os::raw::c_uint,
+    ) -> CUresult {
+        CUresult::CUDA_SUCCESS
+    }
+
     pub(crate) unsafe fn cuGraphicsSubResourceGetMappedArray(
         pArray: *mut CUarray,
         resource: hipGraphicsResource_t,
@@ -1616,7 +1629,8 @@ mod definitions {
     pub(crate) unsafe fn cuGraphicsUnregisterResource(
         resource: hipGraphicsResource_t,
     ) -> hipError_t {
-        hipGraphicsUnregisterResource(resource)
+        //hipGraphicsUnregisterResource(resource)
+        hipError_t::hipSuccess
     }
 
     pub(crate) unsafe fn cuLinkAddData_v2(

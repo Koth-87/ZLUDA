@@ -36,6 +36,7 @@ version = "0.54.0"
 features = [
     "Win32_System_Com",
     "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi"
 ]
 
 [dependencies.cl3]
