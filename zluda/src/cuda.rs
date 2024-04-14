@@ -1254,7 +1254,7 @@ mod definitions {
     }
 
     pub(crate) unsafe fn cuSurfObjectDestroy(surfObject: hipSurfaceObject_t) -> hipError_t {
-        hipDestroySurfaceObject(surfObject)
+        surface::destroy(surfObject)
     }
 
     pub(crate) unsafe fn cuTexObjectCreate(

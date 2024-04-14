@@ -380,6 +380,7 @@ pub enum Instruction<P: ArgParams> {
     },
     MadCC {
         type_: ScalarType,
+        is_hi: bool,
         arg: Arg4<P>,
     },
     Fma(ArithFloat, Arg4<P>),
@@ -476,6 +477,7 @@ pub enum Instruction<P: ArgParams> {
     Red(AtomDetails, Arg2St<P>),
     Nanosleep(Arg1<P>),
     Mul24(Mul24Details, Arg3<P>),
+    Sad(ScalarType, Arg4<P>),
 }
 
 #[derive(Copy, Clone)]
