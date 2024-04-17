@@ -7,6 +7,7 @@ use crate::{
 };
 use crossbeam_channel::{Receiver, Sender};
 use cuda_types::*;
+use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 use serde::Serialize;
 use std::borrow::Cow;
@@ -44,8 +45,15 @@ impl Profiler {
             .flatten()
     }
 
+    pub(crate) fn record_new_context(&self, ctx: CUcontext) {
+        self.sender
+            .send(ProfilerPacket::ContextCreated(ForceSend(ctx)))
+            .ok();
+    }
+
     pub(crate) fn record_kernel(
         &self,
+        context: CUcontext,
         stream: CUstream,
         function: FunctionName,
         start: CUevent,
@@ -53,6 +61,7 @@ impl Profiler {
     ) {
         self.sender
             .send(ProfilerPacket::RecordKernel(KernelEnqueue {
+                context,
                 stream,
                 function,
                 start,
@@ -94,9 +103,12 @@ impl Profiler {
         };
         let file = File::create(path)?;
         let cu_event_create = try_get_cuda_function!(fn_table, cuEventCreate)?;
+        let cu_event_record = try_get_cuda_function!(fn_table, cuEventRecord)?;
         let cu_event_destroy_v2 = try_get_cuda_function!(fn_table, cuEventDestroy_v2)?;
         let cu_event_query = try_get_cuda_function!(fn_table, cuEventQuery)?;
         let cu_event_elapsed_time = try_get_cuda_function!(fn_table, cuEventElapsedTime)?;
+        let cu_ctx_push_current = try_get_cuda_function!(fn_table, cuCtxPushCurrent_v2)?;
+        let cu_ctx_pop_current = try_get_cuda_function!(fn_table, cuCtxPopCurrent_v2)?;
         let mut profiling_start = ptr::null_mut();
         cuda_call!(fn_table.cuInit(0));
         let device_name = Self::get_device_name(fn_table)?;
@@ -104,19 +116,25 @@ impl Profiler {
         cuda_call!(fn_table.cuDevicePrimaryCtxRetain(&mut ctx, CUdevice_v1(0)));
         cuda_call!(fn_table.cuCtxPushCurrent_v2(ctx));
         cuda_call!(cu_event_create(&mut profiling_start, 0));
-        cuda_call!(fn_table.cuEventRecord(profiling_start, ptr::null_mut()));
+        cuda_call!(cu_event_record(profiling_start, ptr::null_mut()));
         let host_start = Instant::now();
         cuda_call!(fn_table.cuEventSynchronize(profiling_start));
         cuda_call!(fn_table.cuCtxPopCurrent_v2(&mut ctx));
         // Don't release the primary context, otherwise the event will get wiped out
         let (sender, receiver) = crossbeam_channel::bounded(1);
         let kernel_start = ForceSend(profiling_start);
+        let ctx = ForceSend(ctx);
         let thread = thread::spawn(move || {
             Self::run(
                 file,
                 device_name,
+                cu_ctx_push_current,
+                cu_ctx_pop_current,
+                cu_event_create,
+                cu_event_record,
                 cu_event_query,
                 cu_event_elapsed_time,
+                ctx,
                 host_start,
                 kernel_start,
                 receiver,
@@ -141,24 +159,50 @@ impl Profiler {
     fn run(
         file: File,
         device_name: String,
+        cu_ctx_push_current: extern "system" fn(CUcontext) -> CUresult,
+        cu_ctx_pop_current: extern "system" fn(*mut CUcontext) -> CUresult,
+        cu_event_create: extern "system" fn(*mut CUevent, u32) -> CUresult,
+        cu_event_record: extern "system" fn(CUevent, CUstream) -> CUresult,
         cu_event_query: extern "system" fn(CUevent) -> CUresult,
         cu_event_elapsed_time: extern "system" fn(*mut f32, CUevent, CUevent) -> CUresult,
+        ctx: ForceSend<CUcontext>,
         host_start: Instant,
         kernel_start: ForceSend<CUevent>,
         receiver: Receiver<ProfilerPacket>,
     ) {
         let mut writer = ProfilingWriter::new(Self::current_exe(), file, device_name);
-        let profiling_start = kernel_start.0;
+        let mut known_context = FxHashMap::<CUcontext, (CUevent, Duration)>::default();
+        known_context.insert(ctx.0, (kernel_start.0, Duration::ZERO));
         let mut queue = VecDeque::new();
         let mut timeout = 1;
         'thread_loop: loop {
             match receiver.recv_timeout(Duration::from_millis(timeout)) {
+                Ok(ProfilerPacket::ContextCreated(context)) => {
+                    Self::register_new_context(
+                        host_start,
+                        cu_ctx_push_current,
+                        cu_ctx_pop_current,
+                        cu_event_create,
+                        cu_event_record,
+                        &mut known_context,
+                        context.0,
+                    );
+                }
                 Ok(ProfilerPacket::Finish) => return,
                 Ok(ProfilerPacket::RecordKernel(packet)) => {
                     timeout = 1;
                     queue.push_back(packet);
                     loop {
                         match receiver.try_recv() {
+                            Ok(ProfilerPacket::ContextCreated(ctx)) => Self::register_new_context(
+                                host_start,
+                                cu_ctx_push_current,
+                                cu_ctx_pop_current,
+                                cu_event_create,
+                                cu_event_record,
+                                &mut known_context,
+                                ctx.0,
+                            ),
                             Ok(ProfilerPacket::Finish) => return,
                             Ok(ProfilerPacket::RecordTask(task)) => {
                                 Self::process_task(&mut writer, host_start, task)
@@ -176,7 +220,7 @@ impl Profiler {
                     timeout = u64::max(100, timeout * 2);
                     Self::process_queue(
                         &mut writer,
-                        profiling_start,
+                        &known_context,
                         cu_event_query,
                         cu_event_elapsed_time,
                         &mut queue,
@@ -184,6 +228,36 @@ impl Profiler {
                 }
             }
         }
+    }
+
+    fn register_new_context(
+        host_start: Instant,
+        cu_ctx_push_current: extern "system" fn(CUcontext) -> CUresult,
+        cu_ctx_pop_current: extern "system" fn(*mut CUcontext) -> CUresult,
+        cu_event_create: extern "system" fn(*mut CUevent, u32) -> CUresult,
+        cu_event_record: extern "system" fn(CUevent, CUstream) -> CUresult,
+        known_streams: &mut FxHashMap<CUcontext, (CUevent, Duration)>,
+        context: CUcontext,
+    ) {
+        let cu_result = cu_ctx_push_current(context);
+        if cu_result != CUresult::CUDA_SUCCESS {
+            panic!("{}", cu_result.0);
+        }
+        let mut context_created = ptr::null_mut();
+        let cu_result = cu_event_create(&mut context_created, 0);
+        if cu_result != CUresult::CUDA_SUCCESS {
+            panic!("{}", cu_result.0);
+        }
+        let cu_result = cu_event_record(context_created, ptr::null_mut());
+        if cu_result != CUresult::CUDA_SUCCESS {
+            panic!("{}", cu_result.0);
+        }
+        let now = Instant::now();
+        let cu_result = cu_ctx_pop_current(ptr::null_mut());
+        if cu_result != CUresult::CUDA_SUCCESS {
+            panic!("{}", cu_result.0);
+        }
+        known_streams.insert(context, (context_created, now.duration_since(host_start)));
     }
 
     fn current_exe() -> Option<String> {
@@ -203,7 +277,7 @@ impl Profiler {
 
     fn process_queue(
         writer: &mut ProfilingWriter,
-        first_event: CUevent,
+        known_context: &FxHashMap<CUcontext, (CUevent, Duration)>,
         cu_event_query: extern "system" fn(CUevent) -> CUresult,
         cu_event_elapsed_time: extern "system" fn(*mut f32, CUevent, CUevent) -> CUresult,
         queue: &mut VecDeque<KernelEnqueue>,
@@ -218,15 +292,17 @@ impl Profiler {
             }
             let kernel = queue.pop_front().unwrap();
             let mut time_from_start = 0f32;
-            let cu_result = cu_event_elapsed_time(&mut time_from_start, first_event, kernel.start);
-            if cu_result != CUresult::CUDA_SUCCESS {
-                panic!("{}", cu_result.0);
-            }
+            let (first_event, host_offset) = known_context[&kernel.context];
             let mut time_of_execution = 0f32;
             let cu_result = cu_event_elapsed_time(&mut time_of_execution, kernel.start, kernel.end);
             if cu_result != CUresult::CUDA_SUCCESS {
                 panic!("{}", cu_result.0);
             }
+            let cu_result = cu_event_elapsed_time(&mut time_from_start, first_event, kernel.start);
+            if cu_result != CUresult::CUDA_SUCCESS {
+                panic!("{}", cu_result.0);
+            }
+            time_from_start += ((host_offset.as_nanos() as f64) / 1_000_000f64) as f32;
             writer.write_kernel(
                 kernel.stream,
                 &kernel.function,
@@ -266,12 +342,16 @@ impl<'a> Drop for TimedTask<'a> {
 }
 
 enum ProfilerPacket {
+    ContextCreated(ForceSend<CUcontext>),
     RecordKernel(KernelEnqueue),
     RecordTask(TaskMeasurement),
     Finish,
 }
 
 struct KernelEnqueue {
+    // We can't always extract context from stream since there's
+    // no mapping from NULL stream to a context
+    context: CUcontext,
     stream: CUstream,
     function: FunctionName,
     start: CUevent,

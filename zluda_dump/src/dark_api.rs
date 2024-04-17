@@ -455,7 +455,8 @@ impl CudaDarkApiDump for CudaDarkApiDumpFns {
             idx,
             Some(arguments_writer),
         );
-        let cuda_state = &mut global_state.delayed_state.unwrap_mut().cuda_state;
+        let global_state =  global_state.delayed_state.unwrap_mut();
+        let cuda_state = &mut global_state.cuda_state;
         let original_ptr = cuda_state.dark_api.overrides[guid].1.add(idx);
         let original_fn = mem::transmute::<
             _,
@@ -466,6 +467,11 @@ impl CudaDarkApiDump for CudaDarkApiDumpFns {
             ) -> CUresult,
         >(*original_ptr);
         let original_result = original_fn(pctx, flags, dev);
+        if original_result == CUresult::CUDA_SUCCESS {
+            if let Some(ref profiler) = global_state.profiler {
+                profiler.record_new_context(*pctx);
+            }
+        }
         fn_logger.result = Some(original_result);
         original_result
     }

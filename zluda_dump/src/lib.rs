@@ -86,7 +86,8 @@ cuda_function_declarations!(
         cuGetProcAddress_v2,
         cuLinkAddData_v2,
         cuLibraryLoadData,
-        cuLibraryGetModule
+        cuLibraryGetModule,
+        cuCtxCreate_v2,
     ]
 );
 
@@ -427,8 +428,8 @@ pub(crate) fn cuModuleLoadData_Post(
     if result != CUresult::CUDA_SUCCESS {
         return;
     }
-    if let Some(module_content) =
-        fn_logger.log_unwrap(unsafe { CUmoduleContent::from_ptr(raw_image.cast()) }.map_err(LogEntry::from))
+    if let Some(module_content) = fn_logger
+        .log_unwrap(unsafe { CUmoduleContent::from_ptr(raw_image.cast()) }.map_err(LogEntry::from))
     {
         state
             .cuda_state
@@ -659,6 +660,11 @@ pub(crate) fn cuLaunchKernel_Post(
     pre_result: (Option<side_by_side::HostArguments>, Option<CUevent>),
     result: CUresult,
 ) {
+    fn cu_ctx_get_current(libcuda: &mut CudaDynamicFns) -> Result<CUcontext, LogEntry> {
+        let mut context = ptr::null_mut();
+        cuda_call!(libcuda.cuCtxGetCurrent(&mut context));
+        Ok(context)
+    }
     if result != CUresult::CUDA_SUCCESS {
         return;
     }
@@ -669,12 +675,15 @@ pub(crate) fn cuLaunchKernel_Post(
                 Some(recorded_func) => profiler::FunctionName::Resolved(recorded_func.name.clone()),
                 None => profiler::FunctionName::Unresolved(f),
             };
-            state.profiler.as_ref().unwrap().record_kernel(
-                stream,
-                func_name,
-                start_event,
-                end_event,
-            );
+            if let Some(context) = fn_logger.log_unwrap(cu_ctx_get_current(&mut state.libcuda)) {
+                state.profiler.as_ref().unwrap().record_kernel(
+                    context,
+                    stream,
+                    func_name,
+                    start_event,
+                    end_event,
+                );
+            }
         }
     }
     unsafe {
@@ -1070,12 +1079,40 @@ pub(crate) fn cuLibraryLoadData_Post(
     ) {
         return;
     }
-    if let Some(module_content) =
-        fn_logger.log_unwrap(unsafe { CUmoduleContent::from_ptr(code.cast()) }.map_err(LogEntry::from))
+    if let Some(module_content) = fn_logger
+        .log_unwrap(unsafe { CUmoduleContent::from_ptr(code.cast()) }.map_err(LogEntry::from))
     {
         state
             .cuda_state
             .record_module(fn_logger, None, module_content);
+    }
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn cuCtxCreate_v2_Pre(
+    _pctx: *mut CUcontext,
+    _flags: ::std::os::raw::c_uint,
+    _dev: CUdevice,
+    _fn_logger: &mut log::FunctionLogger,
+    _state: &mut GlobalDelayedState,
+) {
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn cuCtxCreate_v2_Post(
+    pctx: *mut CUcontext,
+    _flags: ::std::os::raw::c_uint,
+    _dev: CUdevice,
+    _fn_logger: &mut log::FunctionLogger,
+    state: &mut GlobalDelayedState,
+    _pre_result: (),
+    result: CUresult,
+) {
+    if result != CUresult::CUDA_SUCCESS {
+        return;
+    }
+    if let Some(ref profiler) = state.profiler {
+        profiler.record_new_context(unsafe { *pctx });
     }
 }
 
