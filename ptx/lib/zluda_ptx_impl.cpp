@@ -1,5 +1,5 @@
 // Compile and disassemble:
-//   python3 ./cvt.py > cvt.h && /opt/rocm/llvm/bin/clang -std=c++17 -Xclang -no-opaque-pointers -Wall -Wextra -Wsign-compare -Wconversion -x hip zluda_ptx_impl.cpp -S -emit-llvm --cuda-device-only -nogpulib -O3 -Xclang -fallow-half-arguments-and-returns -o - | sed -e 's/define/define linkonce_odr/g' | sed -e '/@llvm.used/d' | sed -e 's/\"target-cpu\"=\"[^\"]*\"//g' | sed -e 's/\"target-features\"=\"[^\"]*\"//g' | sed -e 's/\"denormal-fp-math-f32\"=\"[^\"]*\"//g' | sed -e 's/!llvm.module.flags = !{!0, !1, !2, !3, !4}/!llvm.module.flags = !{ }/g' | sed -e 's/memory(none)/readnone/g' | sed -e 's/memory(argmem: readwrite, inaccessiblemem: readwrite)/inaccessiblemem_or_argmemonly/g' | sed -e 's/memory(read)/readonly/g' | sed -e 's/memory(argmem: readwrite)/argmemonly/g'  | llvm-as-13 -o zluda_ptx_impl.bc && /opt/rocm/llvm/bin/llvm-dis zluda_ptx_impl.bc
+//   python3 ./cvt.py > cvt.h && /opt/rocm/llvm/bin/clang -std=c++20 -Xclang -no-opaque-pointers -Wall -Wextra -Wsign-compare -Wconversion -x hip zluda_ptx_impl.cpp -S -emit-llvm --cuda-device-only -nogpulib -O3 -Xclang -fallow-half-arguments-and-returns -o - | sed -e 's/define/define linkonce_odr/g' | sed -e '/@llvm.used/d' | sed -e 's/\"target-cpu\"=\"[^\"]*\"//g' | sed -e 's/\"target-features\"=\"[^\"]*\"//g' | sed -e 's/\"denormal-fp-math-f32\"=\"[^\"]*\"//g' | sed -e 's/!llvm.module.flags = !{!0, !1, !2, !3, !4}/!llvm.module.flags = !{ }/g' | sed -e 's/memory(none)/readnone/g' | sed -e 's/memory(argmem: readwrite, inaccessiblemem: readwrite)/inaccessiblemem_or_argmemonly/g' | sed -e 's/memory(read)/readonly/g' | sed -e 's/memory(argmem: readwrite)/argmemonly/g'  | llvm-as-13 -o zluda_ptx_impl.bc && /opt/rocm/llvm/bin/llvm-dis zluda_ptx_impl.bc
 // Compile to binary:
 //   /opt/rocm/llvm/bin/clang -x ir -target amdgcn-amd-amdhsa -Xlinker --no-undefined zluda_ptx_impl.bc -mno-wavefrontsize64 -mcpu=gfx1030
 // Decompile:
@@ -1141,43 +1141,37 @@ extern "C"
         }
     }
 
-#define shfl(NAME, EXPR)                                                                                       \
-    uint32_t FUNC(shfl_##NAME##_b32_slow)(uint32_t a, uint32_t b, uint32_t c)                                  \
-    {                                                                                                          \
-        __builtin_amdgcn_wave_barrier();                                                                       \
-        int32_t lane = (int32_t)FUNC_CALL(sreg_laneid());                                                      \
-        int32_t bval = b & 31U;                                                                                \
-        int32_t cval = c & 31U;                                                                                \
-        int32_t mask = (c >> 8) & 31U;                                                                         \
-        int32_t max_lane = (lane & mask) | (cval & ~mask);                                                     \
-        int32_t min_lane __attribute__((unused)) = (lane & mask);                                              \
-        int32_t j, pval;                                                                                       \
-        EXPR;                                                                                                  \
-        if (!pval)                                                                                             \
-            j = lane;                                                                                          \
-        if (is_upper_warp())                                                                                   \
-            j += 32;                                                                                           \
-        int32_t shfl_width = (FUNC_CALL(COMPILATION_MODE) == CompilationMode::DoubleWave32OnWave64) ? 64 : 32; \
-        return __shfl(a, j, shfl_width);                                                                       \
-    }                                                                                                          \
-                                                                                                               \
-    uint2::Native_vec_ FUNC(shfl_##NAME##_b32_pred_slow)(uint32_t a, uint32_t b, uint32_t c)                   \
-    {                                                                                                          \
-        __builtin_amdgcn_wave_barrier();                                                                       \
-        int32_t lane = (int32_t)FUNC_CALL(sreg_laneid());                                                      \
-        int32_t bval = b & 31U;                                                                                \
-        int32_t cval = c & 31U;                                                                                \
-        int32_t mask = (c >> 8) & 31U;                                                                         \
-        int32_t max_lane = (lane & mask) | (cval & ~mask);                                                     \
-        int32_t min_lane __attribute__((unused)) = (lane & mask);                                              \
-        int32_t j, pval;                                                                                       \
-        EXPR;                                                                                                  \
-        if (!pval)                                                                                             \
-            j = lane;                                                                                          \
-        if (is_upper_warp())                                                                                   \
-            j += 32;                                                                                           \
-        int32_t shfl_width = (FUNC_CALL(COMPILATION_MODE) == CompilationMode::DoubleWave32OnWave64) ? 64 : 32; \
-        return uint2(__shfl(a, j, shfl_width), pval).data;                                                     \
+#define shfl(NAME, EXPR)                                                                     \
+    uint32_t FUNC(shfl_##NAME##_b32_slow)(uint32_t a, uint32_t b, uint32_t c)                \
+    {                                                                                        \
+        __builtin_amdgcn_wave_barrier();                                                     \
+        int32_t lane = (int32_t)FUNC_CALL(sreg_laneid());                                    \
+        int32_t bval = b & 31U;                                                              \
+        int32_t cval = c & 31U;                                                              \
+        int32_t mask = (c >> 8) & 31U;                                                       \
+        int32_t max_lane = (lane & mask) | (cval & ~mask);                                   \
+        int32_t min_lane __attribute__((unused)) = (lane & mask);                            \
+        int32_t j, pval;                                                                     \
+        EXPR;                                                                                \
+        if (!pval)                                                                           \
+            j = lane;                                                                        \
+        return __shfl(a, j, 32);                                                             \
+    }                                                                                        \
+                                                                                             \
+    uint2::Native_vec_ FUNC(shfl_##NAME##_b32_pred_slow)(uint32_t a, uint32_t b, uint32_t c) \
+    {                                                                                        \
+        __builtin_amdgcn_wave_barrier();                                                     \
+        int32_t lane = (int32_t)FUNC_CALL(sreg_laneid());                                    \
+        int32_t bval = b & 31U;                                                              \
+        int32_t cval = c & 31U;                                                              \
+        int32_t mask = (c >> 8) & 31U;                                                       \
+        int32_t max_lane = (lane & mask) | (cval & ~mask);                                   \
+        int32_t min_lane __attribute__((unused)) = (lane & mask);                            \
+        int32_t j, pval;                                                                     \
+        EXPR;                                                                                \
+        if (!pval)                                                                           \
+            j = lane;                                                                        \
+        return uint2(__shfl(a, j, 32), pval).data;                                           \
     }
 
     shfl(up, j = lane - bval; pval = (j >= max_lane));
